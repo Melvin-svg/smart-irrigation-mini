@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { database, ref, onValue } from './firebase';
+import { database, ref, onValue, auth, signInAnonymously, onAuthStateChanged } from './firebase';
 import SensorCard from './components/SensorCard';
 import GreenScoreGauge from './components/GreenScoreGauge';
 import PumpControl from './components/PumpControl';
@@ -18,15 +18,45 @@ function App() {
   const [greenScore, setGreenScore] = useState(null);
   const [connected, setConnected] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [authenticated, setAuthenticated] = useState(false);
+
+  // Authentication Effect
+  useEffect(() => {
+    // Switch to Anonymous Auth to avoid "generic email" issues
+    signInAnonymously(auth)
+      .then(() => console.log("Authenticated Anonymously"))
+      .catch((err) => {
+        console.error("Auth error:", err.message);
+        if (err.code === 'auth/operation-not-allowed') {
+          console.error("CRITICAL: You must enable 'Anonymous' sign-in in your Firebase Console!");
+        }
+      });
+
+    const unsubAuth = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setAuthenticated(true);
+      } else {
+        setAuthenticated(false);
+      }
+    });
+
+    return () => unsubAuth();
+  }, []);
 
   // Listen to Firebase Realtime Database
   useEffect(() => {
+    if (!authenticated) return;
     // Sensor data listener
-    const sensorRef = ref(database, '/sensorData');
+    const sensorRef = ref(database, 'sensorData/');
     const unsubSensor = onValue(sensorRef, (snapshot) => {
       const data = snapshot.val();
+      console.log("DEBUG: Raw Sensors Data:", data);
       if (data) {
-        setSensorData(data);
+        setSensorData((prev) => ({
+          ...prev,
+          ...data,
+          moisture: data.moisture !== undefined ? data.moisture : prev.moisture,
+        }));
         setLastUpdated(new Date());
         setConnected(true);
       }
@@ -39,17 +69,21 @@ function App() {
     const controlRef = ref(database, '/control');
     const unsubControl = onValue(controlRef, (snapshot) => {
       const data = snapshot.val();
+      console.log("DEBUG: Raw Control Data:", data);
       if (data) {
-        setControl(data);
+        setControl({
+          pump: data.motor,
+          pumpStatus: data.motor,
+        });
       }
     });
 
-    // Green score listener
-    const metricsRef = ref(database, '/metrics');
+    // Green score listener - Mocked for now as firmware doesn't send it yet
+    const metricsRef = ref(database, '/metrics/greenScore');
     const unsubMetrics = onValue(metricsRef, (snapshot) => {
       const data = snapshot.val();
-      if (data) {
-        setGreenScore(data.greenScore);
+      if (data !== null) {
+        setGreenScore(data); // Using moisture as green score for now
       }
     });
 
@@ -58,7 +92,7 @@ function App() {
       unsubControl();
       unsubMetrics();
     };
-  }, []);
+  }, [authenticated]);
 
   // Determine color classes based on values
   const getMoistureColor = (val) => {

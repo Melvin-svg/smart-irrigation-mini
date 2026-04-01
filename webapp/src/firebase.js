@@ -2,6 +2,7 @@
 // Credentials loaded from .env file (VITE_ prefix required by Vite)
 import { initializeApp } from "firebase/app";
 import { getDatabase, ref, onValue, set } from "firebase/database";
+import { getAuth, signInWithEmailAndPassword, signInAnonymously, onAuthStateChanged } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -15,5 +16,6 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const database = getDatabase(app);
+const auth = getAuth(app);
 
-export { database, ref, onValue, set };
+export { database, ref, onValue, set, auth, signInWithEmailAndPassword, signInAnonymously, onAuthStateChanged };

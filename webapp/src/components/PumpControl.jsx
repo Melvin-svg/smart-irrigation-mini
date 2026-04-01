@@ -5,7 +5,7 @@ function PumpControl({ pumpOn, pumpStatus }) {
 
   const handleToggle = async () => {
     try {
-      const pumpRef = ref(database, '/control/pump');
+      const pumpRef = ref(database, '/control/motor');
       await set(pumpRef, !pumpOn);
     } catch (error) {
       console.error('Failed to toggle pump:', error);
