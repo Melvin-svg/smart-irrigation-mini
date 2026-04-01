@@ -1,0 +1,15 @@
+{
+    "sensorData": {
+        "moisture": 0,
+        "humidity": 0,
+        "temperature": 0,
+        "timestamp": 0
+    },
+    "control": {
+        "pump": false,
+        "pumpStatus": false
+    },
+    "metrics": {
+        "greenScore": 0
+    }
+}
