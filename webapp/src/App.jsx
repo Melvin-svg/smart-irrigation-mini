@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { database, ref, onValue, auth, signInAnonymously, onAuthStateChanged } from './firebase';
+import { database, ref, onValue, set, auth, signInAnonymously, onAuthStateChanged } from './firebase';
 import SensorCard from './components/SensorCard';
 import GreenScoreGauge from './components/GreenScoreGauge';
 import PumpControl from './components/PumpControl';
@@ -14,6 +14,7 @@ function App() {
   const [control, setControl] = useState({
     pump: null,
     pumpStatus: null,
+    manualMode: false,
   });
   const [greenScore, setGreenScore] = useState(null);
   const [connected, setConnected] = useState(false);
@@ -69,12 +70,14 @@ function App() {
     const controlRef = ref(database, '/control');
     const unsubControl = onValue(controlRef, (snapshot) => {
       const data = snapshot.val();
-      console.log("DEBUG: Raw Control Data:", data);
+      console.log("DEBUG: [Firebase] Control Data:", data);
       if (data) {
-        setControl({
+        setControl((prev) => ({
+          ...prev,
           pump: data.motor,
           pumpStatus: data.motor,
-        });
+          manualMode: data.manualMode !== undefined ? data.manualMode : prev.manualMode,
+        }));
       }
     });
 
@@ -180,13 +183,34 @@ function App() {
           progressBarClass="sensor-card__progress-bar--green"
           cardClass="sensor-card--pump"
         />
+        <div className="mode-toggle-card">
+          <div className="mode-toggle-card__header">
+            <span className="mode-indicator">
+              {control.manualMode ? '🟠 MANUAL MODE' : '🔵 AUTO MODE'}
+            </span>
+          </div>
+          <button 
+            className={`mode-btn ${control.manualMode ? 'mode-btn--manual' : 'mode-btn--auto'}`}
+            onClick={() => {
+              const newMode = !control.manualMode;
+              const modeRef = ref(database, '/control/manualMode');
+              set(modeRef, newMode);
+            }}
+          >
+            {control.manualMode ? 'Switch to AUTO' : 'Switch to MANUAL'}
+          </button>
+        </div>
       </div>
 
       {/* Green Score Gauge */}
       <GreenScoreGauge score={greenScore} />
 
       {/* Pump Control */}
-      <PumpControl pumpOn={control.pump} pumpStatus={control.pumpStatus} />
+      <PumpControl 
+        pumpOn={control.pump} 
+        pumpStatus={control.pumpStatus} 
+        manualMode={control.manualMode}
+      />
 
       {/* Last Updated */}
       <div className="last-updated" id="last-updated">

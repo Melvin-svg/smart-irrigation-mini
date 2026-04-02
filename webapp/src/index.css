@@ -564,6 +564,34 @@ body::before {
   animation: none;
 }
 
+/* Mode Tags in Pump Control */
+.pump-control__mode-info {
+  margin-top: 16px;
+}
+
+.mode-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 6px 16px;
+  border-radius: 20px;
+  letter-spacing: 0.03em;
+}
+
+.mode-tag--manual {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--color-accent-amber);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.mode-tag--auto {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--color-primary-light);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
 /* ==================== LAST UPDATED ==================== */
 .last-updated {
   text-align: center;
@@ -649,4 +677,74 @@ body::before {
   .sensor-card__value {
     font-size: 1.6rem;
   }
+}
+
+/* ==================== MODE TOGGLE CARD ==================== */
+.mode-toggle-card {
+  grid-column: span 1;
+  background: var(--bg-card);
+  backdrop-filter: blur(var(--glass-blur));
+  border: var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+  transition: transform var(--transition-normal), box-shadow var(--transition-normal);
+  position: relative;
+  overflow: hidden;
+}
+
+.mode-toggle-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+.mode-indicator {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 6px 16px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.mode-btn {
+  width: 100%;
+  padding: 12px 24px;
+  border-radius: var(--radius-md);
+  border: none;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.mode-btn--auto {
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
+  color: white;
+  box-shadow: 0 4px 15px var(--color-primary-glow);
+}
+
+.mode-btn--manual {
+  background: linear-gradient(135deg, var(--color-accent-blue), #1d4ed8);
+  color: white;
+  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+}
+
+.mode-btn:hover {
+  filter: brightness(1.15);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+.mode-btn:active {
+  transform: translateY(0);
 }
