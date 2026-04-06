@@ -72,12 +72,20 @@ function App() {
       const data = snapshot.val();
       console.log("DEBUG: [Firebase] Control Data:", data);
       if (data) {
-        setControl((prev) => ({
-          ...prev,
-          pump: data.motor,
-          pumpStatus: data.motor,
-          manualMode: data.manualMode !== undefined ? data.manualMode : prev.manualMode,
-        }));
+        setControl({
+          pump: data.motor !== undefined ? data.motor : false,
+          pumpStatus: data.motor !== undefined ? data.motor : false,
+          manualMode: data.manualMode !== undefined ? data.manualMode : false,
+        });
+
+        // One-time cleanup: remove stale keys that shouldn't exist
+        if (data.pump !== undefined || data.pumpStatus !== undefined) {
+          console.warn("Cleaning up stale Firebase keys: pump, pumpStatus");
+          const cleanupPump = ref(database, '/control/pump');
+          const cleanupStatus = ref(database, '/control/pumpStatus');
+          set(cleanupPump, null);
+          set(cleanupStatus, null);
+        }
       }
     });
 

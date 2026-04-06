@@ -3,15 +3,18 @@
 #include <LiquidCrystal_I2C.h>
 #include "addons/TokenHelper.h"
 #include "addons/RTDBHelper.h"
+#include <DHT.h>
 
 // ==================== PIN CONFIGURATION ====================
 #define RELAY_PIN 2        // Active HIGH relay pin for motor
 #define MOISTURE_PIN A0    // Analog moisture sensor
 #define MANUAL_BUTTON 5    // Manual button pin - LOW when pressed
+#define DHTPIN 4           // Digital pin connected to the DHT sensor
+#define DHTTYPE DHT11      // DHT 11
 
 // ==================== WIFI & FIREBASE CONFIG ====================
-#define WIFI_SSID "lysamma"
-#define WIFI_PASSWORD "12345678"
+#define WIFI_SSID "home"
+#define WIFI_PASSWORD "idontknow4321"
 
 #define API_KEY "AIzaSyA8waCa8N0wsmhxHaN_7czChUIDS-o77t8"
 #define DATABASE_URL "https://smart-irrigation-ef8df-default-rtdb.asia-southeast1.firebasedatabase.app/"
@@ -22,14 +25,18 @@
 
 // ==================== OBJECTS ====================
 FirebaseData fbdo;
+FirebaseData fbdo_control; // Use separate object for polling to prevent TCP collisions
 FirebaseAuth auth;
 FirebaseConfig config;
 LiquidCrystal_I2C lcd(0x27, 16, 2);
+DHT dht(DHTPIN, DHTTYPE);
 
 // ==================== VARIABLES ====================
 bool motorState = false;
 bool manualMode = false;
 float moisture = 0;
+float temperature = 0.0;
+float humidity = 0.0;
 unsigned long previousMillis = 0;
 const long interval = 3000;
 bool lastButtonState = HIGH;
@@ -42,6 +49,8 @@ const unsigned long maxPumpTime = 300000;  // 5 minutes
 
 // ✅ MATCHES YOUR FIREBASE STRUCTURE
 const char* moisturePath = "/sensorData/moisture";
+const char* tempPath = "/sensorData/temperature";
+const char* humPath = "/sensorData/humidity";
 const char* motorPath = "/control/motor";
 const char* manualModePath = "/control/manualMode";
 const char* greenScorePath = "/metrics/greenScore";
@@ -56,6 +65,7 @@ void setup() {
   Wire.begin(21, 22);
   lcd.init();
   lcd.backlight();
+  dht.begin();
   
   lcd.setCursor(0, 0);
   lcd.print("ESP32 Irrigation");
@@ -132,9 +142,9 @@ void loop() {
   
   if (currentMillis - previousMillis >= interval) {
     previousMillis = currentMillis;
-    readSensors();
+    checkMotorControl(); // ✅ MUST run FIRST: read remote commands before auto-logic
+    readSensors();       // This calls runAutoLogic() — now has up-to-date mode/motor state
     updateFirebase();
-    checkMotorControl(); // Poll remote commands every 3 seconds (not every loop!)
   }
   
   pumpSafetyCheck();
@@ -142,33 +152,53 @@ void loop() {
   delay(20); // Small delay
 }
 
+// We need an additional variable for stabilized button state to fix the debounce issue
+static bool stabilizedButtonState = HIGH;
+
 void handleButton() {
-  bool buttonState = digitalRead(MANUAL_BUTTON);
+  bool reading = digitalRead(MANUAL_BUTTON);
   
-  if (buttonState != lastButtonState) {
+  if (reading != lastButtonState) {
     buttonPressTime = millis();
   }
   
   if ((millis() - buttonPressTime) > debounceDelay) {
-    if (buttonState == LOW && lastButtonState == HIGH) {
-      manualMode = !manualMode;
-      motorState = manualMode;
-      digitalWrite(RELAY_PIN, motorState);
-      if (manualMode) pumpStartTime = millis();
+    // If the reading has been stable longer than debounce delay
+    if (reading != stabilizedButtonState) {
+      stabilizedButtonState = reading;
       
-      // Update Firebase immediately on physical button press
-      Firebase.RTDB.setBool(&fbdo, manualModePath, manualMode);
-      Firebase.RTDB.setBool(&fbdo, motorPath, motorState);
-      
-      Serial.printf("🔘 MANUAL: %s\n", manualMode ? "ON" : "OFF");
+      // Only do action when the button goes LOW (pressed)
+      if (stabilizedButtonState == LOW) {
+        manualMode = !manualMode;
+        motorState = manualMode;
+        digitalWrite(RELAY_PIN, motorState ? HIGH : LOW);
+        if (manualMode) pumpStartTime = millis();
+        
+        // Update Firebase immediately on physical button press
+        if (Firebase.ready()) {
+          Firebase.RTDB.setBool(&fbdo, manualModePath, manualMode);
+          Firebase.RTDB.setBool(&fbdo, motorPath, motorState);
+        }
+        
+        Serial.printf("🔘 MANUAL: %s\n", manualMode ? "ON" : "OFF");
+      }
     }
   }
-  lastButtonState = buttonState;
+  lastButtonState = reading;
 }
 
 void readSensors() {
   int raw = analogRead(MOISTURE_PIN);
   moisture = 100.0 * (4095.0 - raw) / 4095.0;
+  
+  humidity = dht.readHumidity();
+  temperature = dht.readTemperature();
+  
+  if (isnan(humidity) || isnan(temperature)) {
+    Serial.println("⚠️ Failed to read from DHT sensor!");
+  } else {
+    Serial.printf("🌡️ Temp:%.1f°C | Hum:%.1f%%\n", temperature, humidity);
+  }
   
   runAutoLogic();  // Evaluate auto irrigation logic after reading sensors
   
@@ -178,16 +208,16 @@ void readSensors() {
 
 // Extracted auto-logic so it can be called from multiple places
 void runAutoLogic() {
-  // AUTO PUMP: ON <5%, OFF >70%
+  // AUTO PUMP: ON <30%, OFF >=30%
   if (!manualMode) {
-    if (moisture <= 5.0 && !motorState) {
+    if (moisture < 30.0 && !motorState) {
       motorState = true;
       digitalWrite(RELAY_PIN, HIGH);
       pumpStartTime = millis();
       Serial.println("🚀 AUTO ON - DRY!");
       if (Firebase.ready()) Firebase.RTDB.setBool(&fbdo, motorPath, motorState);
     } 
-    else if (moisture >= 70.0 && motorState) {
+    else if (moisture >= 30.0 && motorState) {
       motorState = false;
       digitalWrite(RELAY_PIN, LOW);
       Serial.println("✅ AUTO OFF - WET!");
@@ -215,42 +245,55 @@ void updateFirebase() {
   Firebase.RTDB.setFloat(&fbdo, moisturePath, moisture);
   Firebase.RTDB.setInt(&fbdo, greenScorePath, (int)moisture);  // GREEN SCORE!
   
+  if (!isnan(temperature)) {
+    Firebase.RTDB.setFloat(&fbdo, tempPath, temperature);
+    Serial.printf("☁️ sensorData/temp:%.1f ✅\n", temperature);
+  }
+  if (!isnan(humidity)) {
+    Firebase.RTDB.setFloat(&fbdo, humPath, humidity);
+    Serial.printf("☁️ sensorData/hum:%.1f ✅\n", humidity);
+  }
+  
   Serial.printf("☁️ sensorData/moisture:%.0f ✅\n", moisture);
   Serial.printf("☁️ metrics/greenScore:%d ✅\n", (int)moisture);
 }
 
 void checkMotorControl() {
   // ===== STEP 1: Check if Web App toggled Auto/Manual mode =====
-  // Must check mode FIRST, before motor commands
-  if (Firebase.ready() && Firebase.RTDB.getBool(&fbdo, manualModePath)) {
-    bool fbMode = fbdo.boolData();
+  if (Firebase.ready() && Firebase.RTDB.getBool(&fbdo_control, manualModePath)) {
+    bool fbMode = fbdo_control.boolData();
     if (fbMode != manualMode) {
       manualMode = fbMode;
       Serial.printf("☁️ FB MODE CHANGE: %s\n", manualMode ? "MANUAL" : "AUTO");
       
-      // When switching TO AUTO mode, immediately run auto-logic
-      if (!manualMode) {
+      if (manualMode) {
+        // Switching TO MANUAL: stop motor, user must explicitly turn ON
+        motorState = false;
+        digitalWrite(RELAY_PIN, LOW);
+        Firebase.RTDB.setBool(&fbdo_control, motorPath, false);
+        Serial.println("✋ MANUAL mode — motor OFF, awaiting user command");
+      } else {
+        // Switching TO AUTO: immediately evaluate auto-logic
         Serial.println("🤖 AUTO activated from webapp — evaluating now...");
-        runAutoLogic();  // Immediately decide pump state based on moisture
+        // runAutoLogic() will be called by readSensors() right after this
       }
     }
   }
 
   // ===== STEP 2: Check if Web App updated the motor state =====
-  // Only treat as manual override if we are ALREADY in manual mode
-  if (Firebase.ready() && Firebase.RTDB.getBool(&fbdo, motorPath)) {
-    bool fbCmd = fbdo.boolData();
+  if (Firebase.ready() && Firebase.RTDB.getBool(&fbdo_control, motorPath)) {
+    bool fbCmd = fbdo_control.boolData();
     if (fbCmd != motorState) {
       if (manualMode) {
         // In manual mode: obey web app motor commands directly
         motorState = fbCmd;
-        digitalWrite(RELAY_PIN, motorState);
+        digitalWrite(RELAY_PIN, motorState ? HIGH : LOW);
         if (motorState) pumpStartTime = millis();
         Serial.printf("☁️ FB MANUAL CMD: %s\n", motorState ? "ON" : "OFF");
       } else {
         // In auto mode: ignore direct motor toggle from web, auto-logic controls it
         // Re-sync Firebase to match the auto-decided state
-        Firebase.RTDB.setBool(&fbdo, motorPath, motorState);
+        Firebase.RTDB.setBool(&fbdo_control, motorPath, motorState);
         Serial.println("☁️ FB motor cmd IGNORED (AUTO mode active)");
       }
     }

@@ -3,39 +3,50 @@ import { database, ref, set } from '../firebase';
 function PumpControl({ pumpOn, pumpStatus, manualMode }) {
   const isLoading = pumpOn === null || pumpOn === undefined;
 
-  const handleToggle = async () => {
+  const setPump = async (value) => {
     if (!manualMode) {
-      console.warn('Pump toggle disabled in AUTO mode');
+      console.warn('Pump control disabled in AUTO mode');
       return;
     }
     try {
+      console.log(`Setting pump to: ${value}`);
       const pumpRef = ref(database, '/control/motor');
-      await set(pumpRef, !pumpOn);
+      await set(pumpRef, value);
     } catch (error) {
-      console.error('Failed to toggle pump:', error);
+      console.error('Failed to set pump:', error);
     }
   };
 
-  // pumpStatus = actual pump state from ESP32
-  // pumpOn = commanded state from web app
-  const actuallyRunning = pumpStatus === true;
+  const actuallyRunning = pumpOn === true;
 
   return (
     <div className="pump-control-section">
       <div className="pump-control__title">💧 Irrigation Control Panel</div>
 
       <div className="pump-control__toggle-wrapper">
-        <span className={`pump-control__label ${!pumpOn ? 'pump-control__label--active' : ''}`}>OFF</span>
+        <span 
+          className={`pump-control__label ${!pumpOn ? 'pump-control__label--active' : ''}`}
+          onClick={() => setPump(false)}
+          style={{ cursor: manualMode ? 'pointer' : 'default' }}
+        >
+          OFF
+        </span>
         <label className="toggle-switch" id="pump-toggle">
           <input
             type="checkbox"
             checked={pumpOn || false}
-            onChange={handleToggle}
+            onChange={() => setPump(!pumpOn)}
             disabled={isLoading || !manualMode}
           />
           <span className="toggle-slider"></span>
         </label>
-        <span className={`pump-control__label ${pumpOn ? 'pump-control__label--active' : ''}`}>ON</span>
+        <span 
+          className={`pump-control__label ${pumpOn ? 'pump-control__label--active' : ''}`}
+          onClick={() => setPump(true)}
+          style={{ cursor: manualMode ? 'pointer' : 'default' }}
+        >
+          ON
+        </span>
       </div>
 
       <div className={`pump-control__status ${actuallyRunning ? 'pump-control__status--on' : 'pump-control__status--off'}`}>
@@ -47,7 +58,7 @@ function PumpControl({ pumpOn, pumpStatus, manualMode }) {
         {manualMode ? (
           <span className="mode-tag mode-tag--manual">✋ Manual Override Active</span>
         ) : (
-          <span className="mode-tag mode-tag--auto">🤖 Automatic Logic Active</span>
+          <span className="mode-tag mode-tag--auto">🤖 Automatic Logic Active — Toggle disabled</span>
         )}
       </div>
     </div>
